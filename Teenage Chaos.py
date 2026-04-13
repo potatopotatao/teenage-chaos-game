@@ -35,20 +35,35 @@ class Scene:
         self.player = Player(50,500,500)
         self.obstacle = [Obstacle(50,100,500,2),Obstacle(50,100,700,3),Obstacle(50,100,100,4),Obstacle(50,100,250,1)]
         self.dialouge_tree = {
-            "start_dialouge" :{
-                "start" : {
-                "text" : "Hello! How are you doing?",
-                "options" : {
-                    "1" : {"text" : "Good!", "next" : "end"},
-                    "2" : {"text" : "Bad!", "next" : "end"}
-                        }
+            "start_dialouge": {
+            "start" : {
+            "text" : ["Hello! How are you doing?",
+                      "I have a job for you! Are you willing to help me?"],
+            "options" : {
+                "1" : {"text" : "Yes!", "next" : "yes_path"},
+                "2" : {"text" : "No!", "next" : "no_path"}
+            }
 
             },
 
+            "yes_path" : {"text" : ["Thanks! That means a lot to me!", "I just need you to pick up the red cube for me!"],
+                          "next" : "end"},
+
+            "no_path" : {"text" : ["Ahhhh, well that's a shame!", "I don't really have anything else to say.....", "............", "You're a dick yk?"],
+                         "next" : "end"},
+
             "end" : {
-                "text" : "Cool..."
+                "text" : ["Well....", "Bye!"]
             }
-                              }}
+                              },
+
+            "DuringQuest_dialouge" : {"start": {"text" : "Have you got the cube yet?", "next" : "end"},
+                                      "end" : {"type" : "end"}},
+
+            "QuestFinished_dialouge" : {"start" : {"text" : ["Thank you SO MUCH!!!", "You're a legend man!"], "next" : "end"},
+                                        "end" : {"type" : "end"}}
+
+            }
         self.npc2_tree = {
             "start_dialouge": {
             "start" : {
@@ -73,19 +88,17 @@ class Scene:
                               },
 
             "DuringQuest_dialouge" : {"start": {"text" : "Have you got the cube yet?", "next" : "end"},
-                                      "end" : ""},
+                                      "end" : {"type" : "end"}},
 
             "QuestFinished_dialouge" : {"start" : {"text" : ["Thank you SO MUCH!!!", "You're a legend man!"], "next" : "end"},
-                                        "end" : ""}
+                                        "end" : {"type" : "end"}}
 
             }
 
-        self.npclinesquestbluebox = ["OMG!", "Thank you so much!",".","..","...","did you expect a reward...",".","..","...","get lost fool!"]
-
 
         self.npc = [NPC(50,800,800,self.dialouge_tree),NPC(50,1000,200,self.npc2_tree)]
-        self.item = [Item(20,600,900,"blue cube")]
-        self.quest = [Quest("blue cube",self.npc[0])]
+        self.item = [Item(20,600,900,"blue cube",(0,0,255)), Item(20,344,577, "red cube",(255,0,0))]
+        self.quest = [Quest("blue cube",self.npc[1]), Quest("red cube", self.npc[0])]
         self.current_npc = None
 
     def collision_check(self):
@@ -117,15 +130,25 @@ class Scene:
                     if event.key == pygame.K_e:
                         itm.item_picked = True
                         self.player.player_items.append(itm.item_name)
-                        self.quest[0].quest_check(self.player,itm,self.npclinesquestbluebox)
-                        self.npc[0].dialouge_index = 0
+
+
+    def quest_state_check(self):
+        for quests in self.quest:
+            for itm in self.item:
+                quests.quest_check(self.player,itm)
+                if quests.result == "In_progress":
+                    quests.npc.current_dialouge = "DuringQuest_dialouge"
+                elif quests.result == "Finished":
+                    quests.npc.current_dialouge = "QuestFinished_dialouge"
+                elif quests.result == None:
+                    quests.npc.current_dialouge = "start_dialouge"
 
     def update_scene(self,screen):
         # collision checks and functions
         self.player.movement_handling()
         
         for obs in self.obstacle:
-            obs.obstacle_movement()
+            obs.obstacle_movement() 
 
         self.collision_check()
 
@@ -145,6 +168,7 @@ class Scene:
         self.dialouge_check(event)
         self.dialouge_close(event)
         self.item_pick(event)
+        self.quest_state_check()
 
 
 
@@ -217,6 +241,7 @@ class NPC(pygame.sprite.Sprite):
         self.current_dialouge = "start_dialouge"
         self.selection_option = 0
         self.line_index = 0
+        self.dialouge_finished = False
 
     def dialouge_display(self,game,screen):
         #font shit
@@ -225,6 +250,15 @@ class NPC(pygame.sprite.Sprite):
         pygame.draw.rect(screen, (40, 40, 40), text_rect)
         #function shit
         node = self.dialouge[self.current_dialouge][self.current_node]
+
+        # check for logic nodes for terminating last lines
+        if node.get("type") == "end":
+            self.dialouge_finished = True
+            game.return_to_previous()
+            self.line_index = 0
+            self.current_node = "start"
+            return
+        
         if isinstance(node["text"],list):
             current_text = node["text"][self.line_index]
         else:
@@ -264,6 +298,17 @@ class NPC(pygame.sprite.Sprite):
     def dialouge_switch(self,game,event):
         # variables
         node = self.dialouge[self.current_dialouge][self.current_node]
+        # Same thing here, check for logic nodes for last line terminations
+        if node.get("type") == "end":
+            self.dialouge_finished = True
+            game.return_to_previous()
+            self.line_index = 0
+            self.current_node = "start"
+            return
+
+
+        
+        
         if "options" in node:
             options_list = list(node["options"].items())
             max_index = len(options_list) - 1
@@ -284,6 +329,7 @@ class NPC(pygame.sprite.Sprite):
                             game.return_to_previous()
                             self.current_node = "start"
                             self.line_index = 0
+                            self.dialouge_finished = True
                             
 
                 if isinstance(node["text"],str):
@@ -294,6 +340,7 @@ class NPC(pygame.sprite.Sprite):
                         game.return_to_previous()
                         self.current_node = "start"
                         self.line_index = 0
+                        self.dialouge_finished = True
                         
 
             is_last_line = False
@@ -328,7 +375,7 @@ class NPC(pygame.sprite.Sprite):
 
             
     def update_npc(self):
-        pygame.draw.rect(screen, (255, 0, 0), (self.npc_x, self.npc_y, self.npc_size, self.npc_size))
+        pygame.draw.rect(screen, (255, 0, 0), self.npc_rect)
 
 
 
@@ -340,31 +387,40 @@ class NPC(pygame.sprite.Sprite):
 
 
 class Item(pygame.sprite.Sprite):
-    def __init__(self,size,WIDTH,HEIGHT,itemname):
+    def __init__(self,size,WIDTH,HEIGHT,itemname,color):
         self.item_size = size
         self.item_x = WIDTH
         self.item_y = HEIGHT
         self.item_picked = False
         self.item_rect = pygame.Rect(self.item_x,self.item_y,self.item_size,self.item_size)
         self.item_name = itemname
+        self.color = color
 
     def item_update(self,screen):
         if not self.item_picked:
-            pygame.draw.rect(screen, (0,0,255), self.item_rect)
+            pygame.draw.rect(screen, self.color, self.item_rect)
 
 class Quest(pygame.sprite.Sprite):
     def __init__(self,itemname,npc):
         self.itemname = itemname
         self.quest_completed = False
         self.npc = npc
-        self.npc_interacted = True
+        self.npc_interacted = False
+        self.result = None
 
-    def quest_check(self,player,item,newlines):
-        if self.npc_interacted:
-            npc.current_dialouge = "DuringQuest_dialouge"
-            if self.itemname in player.player_items:
-                self.quest_completed = True
-                npc.current_dialouge = "QuestFinished_dialouge"
+    def quest_check(self,player,item):
+        if self.npc.dialouge_finished:
+            self.npc_interacted = True
+            
+        if self.itemname in player.player_items:
+            self.quest_completed = True
+            
+        if self.npc_interacted and not self.quest_completed:
+            self.result = "In_progress"
+            
+        elif self.npc_interacted and self.quest_completed:
+            self.result = "Finished"
+                
 
 #Creating Scene Objects
 
